@@ -62,7 +62,15 @@
         "codespaces": {
             "openFiles": [
                 "docs/codespaces-welcome.md"
-            ]
+            ],
+            "repositories": {
+                "yafred/lila": {
+                    "permissions": {
+                        "issues": "write"
+                    }
+                }
+            }
+
         },
         "vscode": {
             "extensions": [
