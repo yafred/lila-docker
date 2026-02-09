@@ -58,6 +58,9 @@ add_services() {
 }
 
 run_start() {
+    if [ -n "$CODESPACES" ]; then
+        git pull
+    fi 
     if [ -z "$(docker compose ps -a --services | xargs)" ]; then
         run_setup
     else
