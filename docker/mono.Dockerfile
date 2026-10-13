@@ -16,7 +16,8 @@ RUN apt update \
         curl \
         python3-pip \
         python3-venv \
-    && apt clean
+    && apt clean \
+    && pip3 install faker pymongo requests
 
 ENV JAVA_HOME=/opt/java/openjdk
 COPY --from=eclipse-temurin:25-jdk $JAVA_HOME $JAVA_HOME
@@ -32,14 +33,14 @@ RUN mkdir /seeded \
     && /scripts/reset-db.sh
 
 ##################################################################################
-FROM sbtscala/scala-sbt:eclipse-temurin-alpine-25_36_1.11.6_3.7.3 AS lilawsbuilder
+FROM sbtscala/scala-sbt:eclipse-temurin-25.0.3_9_1.12.13_3.8.4 AS lilawsbuilder
 
 COPY repos/lila-ws /lila-ws
 WORKDIR /lila-ws
 RUN sbt stage
 
 ##################################################################################
-FROM sbtscala/scala-sbt:eclipse-temurin-alpine-25_36_1.11.6_3.7.3 AS lilabuilder
+FROM sbtscala/scala-sbt:eclipse-temurin-25.0.3_9_1.12.13_3.8.4 AS lilabuilder
 
 COPY --from=node /lila /lila
 WORKDIR /lila
@@ -61,7 +62,12 @@ RUN apt update \
         redis \
         supervisor \
     && apt clean \
-    && pip3 install berserk pytest \
+    && pip3 install \
+        berserk \
+        faker \
+        pymongo \
+        pytest \
+        requests \
     && mkdir -p /var/log/supervisor
 
 COPY --from=dbbuilder /lila-db-seed /lila-db-seed

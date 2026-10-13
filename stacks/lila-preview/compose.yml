@@ -1,0 +1,251 @@
+x-public-networks: &public-networks
+  - frontend
+  - default
+
+services:
+
+  caddy:
+    image: caddy:2
+    environment:
+      - LILA_DOMAIN=preview.${SUBDOMAIN:-test}.lichess.app
+      - LILA_URL=https://preview.${SUBDOMAIN:-test}.lichess.app
+    volumes:
+      - ./conf/Caddyfile:/etc/caddy/Caddyfile
+    networks: *public-networks
+    labels:
+      - dev.dozzle.icon=caddy
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.services.lila-preview-${SUBDOMAIN:-test}.loadbalancer.server.port=80
+      - traefik.http.routers.lila-preview-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`)
+      - traefik.http.routers.lila-preview-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-preview-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-preview-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`) && (PathPrefix(`/player`) || PathPrefix(`/forum`) || PathPrefix(`/team`) || PathPrefix(`/blog`) || PathPrefix(`/games`) || PathPrefix(`/class`) || PathPrefix(`/tournament/leaderboard`) || PathPrefix(`/training`) || PathPrefix(`/streak`) || PathPrefix(`/storm`) || PathPrefix(`/racer`) || PathPrefix(`/insights`) || PathPrefix(`/opening`) || PathPrefix(`/analysis/pgn`))
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.middlewares=authentik@file
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.priority=100
+      - traefik.http.routers.lila-preview-protected-${SUBDOMAIN:-test}.service=lila-preview-${SUBDOMAIN:-test}
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`) && PathPrefix(`/outpost.goauthentik.io`)
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.priority=200
+      - traefik.http.routers.lila-preview-outpost-${SUBDOMAIN:-test}.service=authentik-server@file
+
+  lila:
+    image: ${LILA_SERVER_IMAGE:-ghcr.io/lichess-org/lila-server:latest}
+    environment:
+      - LILA_DOMAIN=preview.${SUBDOMAIN:-test}.lichess.app
+      - LILA_URL=https://preview.${SUBDOMAIN:-test}.lichess.app
+      - LILA_SITE_NAME=${LILA_SITE_NAME:-lichess preview}
+      - LILA_EXPLORER_ENDPOINT=https://preview.${SUBDOMAIN:-test}.explorer.lichess.app
+    volumes:
+      - ./conf/lila.conf:/lila/conf/application.conf
+      - lila-assets-data:/lila/public:ro
+    secrets:
+      - lila_preview_firebase_service_account
+    labels:
+      - dev.dozzle.icon=lichess
+
+  lila_assets:
+    image: ${LILA_ASSETS_IMAGE:-ghcr.io/lichess-org/lila-assets:latest}
+    volumes:
+      - lila-assets-data:/assets:rw
+      - ./scripts/update-asset-volume.sh:/docker-entrypoint.d/50-update-assets.sh:ro
+    labels:
+      - dev.dozzle.icon=filebrowser
+
+  lila_ws:
+    image: ${LILA_WS_IMAGE:-ghcr.io/lichess-org/lila-ws:latest}
+    environment:
+      - CONFIG_FORCE_csrf.origin=https://preview.${SUBDOMAIN:-test}.lichess.app
+      - CONFIG_FORCE_mongo_uri=mongodb://mongodb:27017/lichess?appName=lila-ws
+      - CONFIG_FORCE_redis.uri=redis://redis
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(exec 3<>/dev/tcp/127.0.0.1/9664) 2>/dev/null'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - dev.dozzle.icon=websocket
+
+  mongodb:
+    image: mongo:8.2-noble
+    labels:
+      - dev.dozzle.icon=mongodb
+
+  redis:
+    image: redis:8
+    labels:
+      - dev.dozzle.icon=redis
+
+  openingexplorer:
+    image: ghcr.io/lichess-org/lila-openingexplorer:latest
+    environment:
+      - LILA_URL=https://preview.${SUBDOMAIN:-test}.lichess.app
+      - EXPLORER_BEARER=lip_openingexplorer-${USER_SEED_PASSWORD:-password}
+    volumes:
+      - openingexplorer-data:/app/_db
+    networks: *public-networks
+    labels:
+      - dev.dozzle.icon=meilisearch
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.services.lila-explorer-${SUBDOMAIN:-test}.loadbalancer.server.port=9002
+      - traefik.http.routers.lila-explorer-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.explorer.lichess.app`)
+      - traefik.http.routers.lila-explorer-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-explorer-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-explorer-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-explorer-${SUBDOMAIN:-test}.middlewares=explorer-cors-${SUBDOMAIN:-test}
+      - traefik.http.middlewares.explorer-cors-${SUBDOMAIN:-test}.headers.accessControlAllowOriginList=https://preview.${SUBDOMAIN:-test}.lichess.app
+      - traefik.http.middlewares.explorer-cors-${SUBDOMAIN:-test}.headers.accessControlAllowCredentials=true
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.explorer.lichess.app`) && PathPrefix(`/import`)
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.priority=200
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.middlewares=block-import-${SUBDOMAIN:-test}
+      - traefik.http.routers.lila-explorer-blocked-${SUBDOMAIN:-test}.service=lila-explorer-${SUBDOMAIN:-test}
+      - traefik.http.middlewares.block-import-${SUBDOMAIN:-test}.ipallowlist.sourcerange=192.0.2.1/32
+
+  lila_fishnet:
+    image: ghcr.io/lichess-org/lila-fishnet:latest
+    environment:
+      - REDIS_HOST=redis
+      # - HTTP_API_LOGGER=true
+    labels:
+      - dev.dozzle.icon=docker
+
+  fishnet_play:
+    image: niklasf/fishnet:main
+    environment:
+      - ENDPOINT=http://lila_fishnet:9665/fishnet
+      - KEY=fishnetplaydev
+      - MAX_BACKOFF=5
+      - STATS_FILE=/stats.json
+    labels:
+      - dev.dozzle.icon=docker
+
+  fishnet_analysis:
+    image: niklasf/fishnet:main
+    environment:
+      - ENDPOINT=http://lila:9663/fishnet
+      - MAX_BACKOFF=5
+      - STATS_FILE=/stats.json
+    labels:
+      - dev.dozzle.icon=docker
+
+  lila_gif:
+    image: ghcr.io/lichess-org/lila-gif:latest
+    entrypoint: /usr/local/bin/lila-gif --bind 0.0.0.0:6175
+    labels:
+      - dev.dozzle.icon=photoview
+
+  lila_push:
+    image: ghcr.io/lichess-org/lila-push:latest
+    entrypoint: /usr/local/bin/lila-push --vapid /app/private.pem --vapid-subject mailto:contact@lichess.org --bind 0.0.0.0:9054
+    environment:
+      - PUSH_LOG=debug
+    volumes:
+      - /data/lila-preview/lila-push/private.pem:/app/private.pem:ro
+    labels:
+      - dev.dozzle.icon=ntfy
+
+  lila_db_seed:
+    image: ghcr.io/lichess-org/lila-db-seed:latest
+    environment:
+      - USER_SEED_PASSWORD=${USER_SEED_PASSWORD:-password}
+    deploy:
+      restart_policy:
+        condition: none
+    labels:
+      - dev.dozzle.icon=docker
+
+  picfit:
+    image: thoas/picfit:0.16.1
+    environment:
+      - PICFIT_CONFIG_PATH=/mnt/config.json
+    volumes:
+      - ./conf/picfit.json:/mnt/config.json
+    labels:
+      - dev.dozzle.icon=synology-photo-station
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      - MP_WEBROOT=mailpit
+      - MP_MAX_AGE=1h
+    networks: *public-networks
+    labels:
+      - dev.dozzle.icon=mailpit
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.services.lila-mailpit-${SUBDOMAIN:-test}.loadbalancer.server.port=8025
+      - traefik.http.routers.lila-mailpit-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`) && PathPrefix(`/mailpit`)
+      - traefik.http.routers.lila-mailpit-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-mailpit-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-mailpit-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-mailpit-${SUBDOMAIN:-test}.priority=100
+
+  dozzle:
+    image: amir20/dozzle:latest
+    environment:
+      - DOZZLE_BASE=/logs
+      - DOZZLE_FILTER=label=com.docker.stack.namespace=${PREVIEW_NAMESPACE:-lila-preview-${SUBDOMAIN:-test}
+      - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_DISABLE_SETUP_WIZARD=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: *public-networks
+    labels:
+      - dev.dozzle.icon=dozzle
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.services.lila-dozzle-${SUBDOMAIN:-test}.loadbalancer.server.port=8080
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`) && PathPrefix(`/logs`)
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.middlewares=authentik@file
+      - traefik.http.routers.lila-dozzle-${SUBDOMAIN:-test}.priority=100
+
+  mongo_express:
+    image: mongo-express:1-20-alpine3.19
+    environment:
+      - ME_CONFIG_BASICAUTH=false
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_SITE_BASEURL=/mongodb
+    depends_on:
+      - mongodb
+    networks: *public-networks
+    labels:
+      - dev.dozzle.icon=adminer
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.services.lila-mongo-express-${SUBDOMAIN:-test}.loadbalancer.server.port=8081
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.rule=Host(`preview.${SUBDOMAIN:-test}.lichess.app`) && PathPrefix(`/mongodb`)
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.entrypoints=websecure
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.tls=true
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.tls.certresolver=myresolver
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.middlewares=authentik@file
+      - traefik.http.routers.lila-mongo-express-${SUBDOMAIN:-test}.priority=100
+
+volumes:
+  lila-assets-data:
+  openingexplorer-data:
+    # external: true
+
+secrets:
+  lila_preview_firebase_service_account:
+    external: true
+
+networks:
+  frontend:
+    external: true
+  default:
+    driver: overlay
+    # driver: bridge

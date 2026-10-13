@@ -1,8 +1,19 @@
+---
 include:
   - compose-lila-ws-${LILA_WS_CONTAINER:-image}.yml
   - compose-search.yml
 
 services:
+  openingexplorer:
+    image: ghcr.io/lichess-org/lila-openingexplorer:latest
+    restart: unless-stopped
+    ports:
+      - 9002:9002
+    volumes:
+      - openingexplorer-data:/app/_db
+    environment:
+      - LILA_URL=http://caddy
+      - EXPLORER_BEARER=lip_openingexplorer
   mongodb:
     image: mongo:7.0.28-jammy
     restart: unless-stopped
@@ -18,20 +29,17 @@ services:
       - ./scripts:/scripts
     profiles:
       - base
-
   mongodb_secondary:
     image: mongo:7.0.28-jammy
     restart: unless-stopped
     command: mongod --bind_ip_all --replSet rs0
     profiles:
       - base
-
   redis:
     image: redis:8.0.3-alpine3.21
     restart: unless-stopped
     profiles:
       - base
-
   lila:
     build:
       context: docker
@@ -59,7 +67,6 @@ services:
       - ./conf/firebase-service-account.json:/opt/firebase-service-account.json:ro
     profiles:
       - base
-
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
@@ -74,7 +81,6 @@ services:
       - ./static:/static
     profiles:
       - base
-
   mono:
     image: ghcr.io/lichess-org/lila-docker:main
     restart: unless-stopped
@@ -85,7 +91,6 @@ services:
       - LILA_URL=${LILA_URL:-http://localhost:8080}
     profiles:
       - quick
-
   api_docs:
     build:
       context: docker
@@ -94,7 +99,10 @@ services:
         GROUP_ID: ${GROUP_ID:-}
       dockerfile: ui.Dockerfile
     working_dir: /api/doc
-    entrypoint: ["/bin/sh", "-c", "npm install && npm run serve -- --host=0.0.0.0"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - pnpm install && pnpm dev --host 0.0.0.0
     restart: unless-stopped
     user: ${USER_ID:-}:${GROUP_ID:-}
     ports:
@@ -103,7 +111,6 @@ services:
       - ./repos/api:/api
     profiles:
       - api-docs
-
   chessground:
     build:
       context: docker
@@ -111,7 +118,10 @@ services:
         USER_ID: ${USER_ID:-}
         GROUP_ID: ${GROUP_ID:-}
       dockerfile: ui.Dockerfile
-    entrypoint: ["/bin/sh", "-c", "pnpm install && pnpm run compile && pnpx http-server -p 8080"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - pnpm install && pnpm run compile && pnpx http-server -p 8080
     restart: unless-stopped
     user: ${USER_ID:-}:${GROUP_ID:-}
     ports:
@@ -121,7 +131,6 @@ services:
       - ./.pnpm-store:/.pnpm-store
     profiles:
       - chessground
-
   pgn_viewer:
     build:
       context: docker
@@ -129,7 +138,10 @@ services:
         USER_ID: ${USER_ID:-}
         GROUP_ID: ${GROUP_ID:-}
       dockerfile: ui.Dockerfile
-    entrypoint: ["/bin/sh", "-c", "pnpm install && pnpm run demo"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - pnpm install && pnpm run demo
     restart: unless-stopped
     user: ${USER_ID:-}:${GROUP_ID:-}
     ports:
@@ -139,9 +151,8 @@ services:
       - ./.pnpm-store:/.pnpm-store
     profiles:
       - pgn-viewer
-
   lila_engine:
-    image: rust:1.89.0-trixie
+    image: rust:1.95.0-trixie
     working_dir: /lila-engine
     entrypoint: cargo run -- --bind 0.0.0.0:9666 --mongodb mongodb://mongodb
     restart: unless-stopped
@@ -154,7 +165,6 @@ services:
       - ./repos/lila-engine:/lila-engine
     profiles:
       - external-engine
-
   lila_fishnet:
     build:
       context: docker
@@ -173,17 +183,16 @@ services:
       - ./repos/lila-fishnet:/lila-fishnet
     profiles:
       - stockfish-play
-
   fishnet_play:
     image: niklasf/fishnet:2.12.0
     restart: unless-stopped
     environment:
       - ENDPOINT=http://lila_fishnet:9665/fishnet
+      - KEY=fishnetplaydev
       - MAX_BACKOFF=5
       - STATS_FILE=/stats.json
     profiles:
       - stockfish-play
-
   fishnet_analysis:
     image: niklasf/fishnet:2.12.0
     restart: unless-stopped
@@ -193,7 +202,6 @@ services:
       - STATS_FILE=/stats.json
     profiles:
       - stockfish-analysis
-
   python:
     build:
       context: docker
@@ -204,7 +212,6 @@ services:
       - ./scripts:/scripts
     profiles:
       - utils
-
   ui:
     build:
       context: docker
@@ -215,7 +222,7 @@ services:
     restart: unless-stopped
     user: ${USER_ID:-}:${GROUP_ID:-}
     environment:
-      - CI=1 # to disable pnpm install prompts
+      - CI=1  # to disable pnpm install prompts
     volumes:
       - ./repos/lila:/lila
       - ./repos/chessground:/chessground
@@ -223,9 +230,8 @@ services:
       - ./.pnpm-store:/.pnpm-store
     profiles:
       - utils
-
   lila_gif:
-    image: rust:1.89.0-trixie
+    image: rust:1.95.0-trixie
     working_dir: /lila-gif
     entrypoint: cargo run -- --bind 0.0.0.0:6175
     restart: unless-stopped
@@ -236,11 +242,11 @@ services:
       - ./repos/lila-gif:/lila-gif
     profiles:
       - gifs
-
   lila_push:
-    image: rust:1.89.0-trixie
+    image: rust:1.95.0-trixie
     working_dir: /lila-push
-    entrypoint: cargo run --release -- --vapid private.pem --vapid-subject mailto:contact@lichess.org --bind 0.0.0.0:9054
+    entrypoint: cargo run --release -- --vapid private.pem --vapid-subject mailto:contact@lichess.org
+      --bind 0.0.0.0:9054
     restart: unless-stopped
     user: ${USER_ID:-}:${GROUP_ID:-}
     ports:
@@ -250,7 +256,6 @@ services:
       - ./conf/private.pem:/lila-push/private.pem
     profiles:
       - push
-
   picfit:
     build:
       context: docker
@@ -262,7 +267,6 @@ services:
       - ./docker/assets:/uploads
     profiles:
       - thumbnails
-
   mailpit:
     image: axllent/mailpit:v1.27.7
     restart: unless-stopped
@@ -270,7 +274,6 @@ services:
       - 8025:8025
     profiles:
       - email
-
   mongo_express_primary:
     image: mongo-express:1.0.2-20-alpine3.19
     restart: unless-stopped
@@ -283,7 +286,6 @@ services:
       - mongodb
     profiles:
       - mongo-express
-  
   prometheus:
     image: prom/prometheus:v3.5.0
     volumes:
@@ -292,7 +294,6 @@ services:
       - 9090:9090
     profiles:
       - monitoring
-
   influxdb:
     image: influxdb:2.7.12-alpine
     restart: unless-stopped
@@ -307,6 +308,9 @@ services:
       - DOCKER_INFLUXDB_INIT_BUCKET=kamon
     profiles:
       - monitoring
+
+volumes:
+  openingexplorer-data:
 
 networks:
   default:

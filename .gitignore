@@ -1,5 +1,6 @@
 .env
 .pnpm-store
+node_modules
 
 conf/firebase-service-account.json
 firebase.env
@@ -14,8 +15,8 @@ repos
 settings.env
 settings.toml
 
+
 .metals
-ran_as_gitpod_prebuild
 
 # picfit-generated files
 docker/assets/*.webp
@@ -26,3 +27,14 @@ settings.json
 
 # IntelliJ auto-generated files
 .idea
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

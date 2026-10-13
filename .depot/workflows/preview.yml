@@ -1,0 +1,57 @@
+name: Preview Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: up (build + deploy) or down (tear down)
+        type: choice
+        options:
+          - up
+          - down
+        default: up
+      pr:
+        description: lichess-org/lila pull request number
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: inputs.action == 'up'
+    runs-on: depot-ubuntu-latest
+    strategy:
+      matrix:
+        component: [server, assets]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: lichess-org/lila
+          ref: refs/pull/${{ inputs.pr }}/head
+          path: previews/lila
+      - uses: depot/setup-action@v1
+      - uses: depot/build-push-action@v1
+        with:
+          project: jxm5r03mgs
+          context: previews
+          file: previews/docker/${{ matrix.component }}.Dockerfile
+          platforms: linux/amd64
+          save: true
+          save-tags: pr-${{ inputs.pr }}-lila-${{ matrix.component }}
+
+  # Runs after the builds for `up`, or on its own for `down` (build is skipped).
+  deploy:
+    needs: build
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: depot-ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run previews/deploy.ts "$ACTION" "$PR"
+        env:
+          ACTION: ${{ inputs.action }}
+          PR: ${{ inputs.pr }}
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
